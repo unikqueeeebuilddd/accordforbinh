@@ -1,0 +1,9 @@
+{
+  "name": "accord-perfume-app",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "dependencies": {
+    "firebase-admin": "^12.6.0"
+  }
+}

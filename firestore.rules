@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /perfumes/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /pairs/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /families/{id} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
