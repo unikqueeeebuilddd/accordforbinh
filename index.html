@@ -91,9 +91,13 @@
   .rail-mobile{display:none;}
 
   /* ---- Main ---- */
-  main{flex:1; min-width:0; padding:28px 34px 60px; max-width:1180px;}
-  .view{display:none;}
+  main{flex:1; min-width:0; padding:28px 34px 60px;}
+  .view{display:none; max-width:1180px;}
   .view.active{display:block;}
+  /* Layering view is allowed to use the full available width, so the matrix
+     can grow to fit the screen instead of being capped at 1180px and forced
+     to horizontal-scroll on wide monitors. */
+  #view-layering.view{max-width:none;}
   .view-head{display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:20px; flex-wrap:wrap;}
   .view-head-actions{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
   .view-title{font-size:26px; font-weight:600; margin:0 0 4px;}
@@ -192,7 +196,7 @@
   .mx-corner{position:sticky; left:0; top:0; z-index:4; background:var(--surface); border-bottom:1px solid var(--border); border-right:1px solid var(--border);}
   table.matrix th.mx-colhead{
     position:sticky; top:0; z-index:2; background:var(--surface); border-bottom:1px solid var(--border);
-    padding:9px 6px; width:108px; min-width:108px; max-width:108px; vertical-align:bottom;
+    padding:9px 6px; min-width:64px; vertical-align:bottom;
   }
   table.matrix th.mx-rowhead{
     position:sticky; left:0; z-index:2; background:var(--surface); border-right:1px solid var(--border);
@@ -523,6 +527,10 @@
       <div class="field">
         <label>Best seasons for this pairing (shown on the matrix)</label>
         <div class="season-check-row" id="pair-seasons"></div>
+      </div>
+      <div class="field">
+        <label>Best time of day for this pairing (shown on the matrix)</label>
+        <div class="season-check-row" id="pair-daypart"></div>
       </div>
       <div class="field">
         <label for="pair-note">Note (optional)</label>
@@ -918,10 +926,18 @@
     }
     function isGroupStartRow(idx){ return isGroupStartCol(idx); }
 
+    // Size columns to fill the available width on wide screens (so nothing
+    // needs horizontal scrolling unless there are genuinely too many perfumes
+    // to fit even at the minimum readable width).
+    var MX_MIN_COL = 64, MX_MAX_COL = 148, MX_ROWHEAD_RESERVE = 190;
+    var availWidth = holder.clientWidth || (window.innerWidth - 260);
+    var colWidth = Math.max(MX_MIN_COL, Math.min(MX_MAX_COL, Math.floor(Math.max(0, availWidth - MX_ROWHEAD_RESERVE) / Math.max(1, list.length))));
+    var colWidthStyle = "width:"+colWidth+"px;min-width:"+colWidth+"px;max-width:"+colWidth+"px;";
+
     var html = '<div class="matrix-wrap"><table class="matrix"><thead><tr><th class="mx-corner"></th>';
     list.forEach(function(p, idx){
       var cls = "mx-colhead" + (isGroupStartCol(idx) ? " mx-group-start-col" : "");
-      html += '<th class="'+cls+'" style="'+groupStyle(p,"border-bottom-color")+(grouped?"border-bottom-width:3px;border-bottom-style:solid;":"")+'"><div class="mx-head-inner">'+esc(p.name)+'</div></th>';
+      html += '<th class="'+cls+'" style="'+colWidthStyle+groupStyle(p,"border-bottom-color")+(grouped?"border-bottom-width:3px;border-bottom-style:solid;":"")+'"><div class="mx-head-inner">'+esc(p.name)+'</div></th>';
     });
     html += '</tr></thead><tbody>';
     list.forEach(function(rowP, ridx){
@@ -939,11 +955,16 @@
           var rating = pair && pair.rating;
           var bg = rating ? RATING_META[rating].color : null;
           var tdCls = isGroupStartCol(cidx) ? ' class="mx-group-start-col"' : '';
-          var emojiStr = (pair && pair.seasons && pair.seasons.length)
+          var seasonEmoji = (pair && pair.seasons && pair.seasons.length)
             ? pair.seasons.map(function(sid){ var m = seasonMeta(sid); return m ? m.emoji : ""; }).join("")
             : "";
+          var daypartEmoji = (pair && pair.daypart && pair.daypart.length)
+            ? pair.daypart.map(function(did){ var m = daypartMeta(did); return m ? m.emoji : ""; }).join("")
+            : "";
+          var emojiStr = seasonEmoji + daypartEmoji;
           var titleBits = [rowP.name + " + " + colP.name];
           if (pair && pair.seasons && pair.seasons.length) titleBits.push(pair.seasons.map(function(sid){var m=seasonMeta(sid);return m?m.label:sid;}).join(", "));
+          if (pair && pair.daypart && pair.daypart.length) titleBits.push(pair.daypart.map(function(did){var m=daypartMeta(did);return m?m.label:did;}).join(", "));
           if (pair && pair.note) titleBits.push(pair.note);
           var status = rating || "unrated";
           var isDimmed = state.layeringRatingFilter.length > 0 && state.layeringRatingFilter.indexOf(status) === -1;
@@ -1144,6 +1165,20 @@
         span.style.background = inp.checked ? "var("+meta.varName+")" : "";
       });
     });
+    var pairDaypartEl = $("#pair-daypart");
+    var pairCurrentDaypart = existing && existing.daypart ? existing.daypart : [];
+    pairDaypartEl.innerHTML = DAYPARTS.map(function(d){
+      var checked = pairCurrentDaypart.indexOf(d.id) !== -1;
+      return '<label class="season-check"><input type="checkbox" value="'+d.id+'" '+(checked?'checked':'')+'>' +
+        '<span style="'+(checked ? 'background:var('+d.varName+');' : '')+'">'+d.emoji+' '+d.label+'</span></label>';
+    }).join("");
+    $all('.season-check input', pairDaypartEl).forEach(function(inp){
+      inp.addEventListener("change", function(){
+        var span = inp.nextElementSibling;
+        var meta = daypartMeta(inp.value);
+        span.style.background = inp.checked ? "var("+meta.varName+")" : "";
+      });
+    });
     $("#pair-note").value = existing && existing.note ? existing.note : "";
     $("#pair-overlay").classList.add("open");
   }
@@ -1155,11 +1190,13 @@
     var key = pairKey(state.activePair.a, state.activePair.b);
     var note = $("#pair-note").value.trim();
     var seasons = $all('#pair-seasons input:checked').map(function(i){return i.value;});
+    var daypart = $all('#pair-daypart input:checked').map(function(i){return i.value;});
     var data = {
       a: state.activePair.a < state.activePair.b ? state.activePair.a : state.activePair.b,
       b: state.activePair.a < state.activePair.b ? state.activePair.b : state.activePair.a,
       rating: rating,
       seasons: seasons,
+      daypart: daypart,
       note: note,
       updatedAt: new Date().toISOString()
     };
@@ -1195,7 +1232,8 @@
       var a = state.perfumes.find(function(x){return x.id===pr.a;});
       var b = state.perfumes.find(function(x){return x.id===pr.b;});
       if (!a || !b) return null;
-      return "- " + a.name + " + " + b.name + ": " + pr.rating + (pr.note ? " (" + pr.note + ")" : "");
+      var daypartBit = (pr.daypart && pr.daypart.length) ? " [best: " + pr.daypart.join("/") + "]" : "";
+      return "- " + a.name + " + " + b.name + ": " + pr.rating + daypartBit + (pr.note ? " (" + pr.note + ")" : "");
     }).filter(Boolean);
     var out = famLines + "PERFUME COLLECTION (" + state.perfumes.length + " bottles):\n" + lines.join("\n");
     out += "\n\nLAYERING RATINGS SO FAR (" + pairLines.length + " rated pairs; 'good' = layers well, 'maybe' = situational, 'bad' = clashes):\n";
@@ -1520,6 +1558,13 @@
     });
   }
   watchAuth();
+
+  var mxResizeTimer = null;
+  window.addEventListener("resize", function(){
+    if (state.view !== "layering") return;
+    clearTimeout(mxResizeTimer);
+    mxResizeTimer = setTimeout(renderMatrix, 120);
+  });
 })();
 </script>
 </body>
