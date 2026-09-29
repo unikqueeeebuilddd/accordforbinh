@@ -107,9 +107,14 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model,
-        max_tokens: 400,
+        max_tokens: 700,
         system: system || undefined,
-        messages: messages.map((m) => ({ role: m.role, content: String(m.content || "") }))
+        messages: messages.map((m) => ({ role: m.role, content: String(m.content || "") })),
+        // Lets the Advisor look up real, current fragrance facts (notes, accords,
+        // release info) instead of guessing from memory. The system prompt tells
+        // it when to use this vs. answering from the user's own logged data.
+        // Capped at 2 searches per reply to keep cost and latency bounded.
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }]
       })
     });
 
