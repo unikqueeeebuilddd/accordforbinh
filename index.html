@@ -91,13 +91,9 @@
   .rail-mobile{display:none;}
 
   /* ---- Main ---- */
-  main{flex:1; min-width:0; padding:28px 34px 60px;}
-  .view{display:none; max-width:1180px;}
+  main{flex:1; min-width:0; padding:28px 34px 60px; max-width:1180px;}
+  .view{display:none;}
   .view.active{display:block;}
-  /* Layering view is allowed to use the full available width, so the matrix
-     can grow to fit the screen instead of being capped at 1180px and forced
-     to horizontal-scroll on wide monitors. */
-  #view-layering.view{max-width:none;}
   .view-head{display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:20px; flex-wrap:wrap;}
   .view-head-actions{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
   .view-title{font-size:26px; font-weight:600; margin:0 0 4px;}
@@ -202,7 +198,7 @@
     position:sticky; left:0; z-index:2; background:var(--surface); border-right:1px solid var(--border);
     text-align:left; padding:9px 14px 9px 20px; font-weight:600; max-width:230px;
   }
-  .mx-head-inner{font-weight:600; font-size:11.5px; line-height:1.25; white-space:normal; word-break:break-word; text-align:center;}
+  .mx-head-inner{font-weight:600; font-size:11.5px; line-height:1.25; white-space:normal; word-break:keep-all; overflow-wrap:normal; text-align:center;}
   .mx-cell-btn{
     display:flex; align-items:center; justify-content:center;
     width:100%; height:44px; border:1px solid var(--border); background:var(--surface-2); cursor:pointer; border-radius:0; margin:0; padding:0;
@@ -213,7 +209,7 @@
   .mx-cell-diag{background:repeating-linear-gradient(135deg, var(--border) 0 4px, transparent 4px 9px); cursor:default;}
   .mx-cell-diag:hover{filter:none;}
   .mx-rowhead-inner{display:flex; flex-direction:column; gap:2px; align-items:flex-start; margin-left:2px;}
-  .mx-rowhead-inner span{display:block; white-space:normal; word-break:break-word;}
+  .mx-rowhead-inner span{display:block; white-space:normal; word-break:keep-all; overflow-wrap:normal;}
   .mx-group-tag{font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap;}
   tr.mx-group-start td, tr.mx-group-start th{border-top:3px solid var(--bg);}
   td.mx-group-start-col, .mx-colhead.mx-group-start-col{border-left:3px solid var(--bg);}
@@ -614,6 +610,13 @@
 
   function $(sel, root){ return (root||document).querySelector(sel); }
   function $all(sel, root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); }
+  var _measureCanvas = null;
+  function measureText(text, font){
+    if (!_measureCanvas) _measureCanvas = document.createElement("canvas");
+    var ctx = _measureCanvas.getContext("2d");
+    ctx.font = font;
+    return ctx.measureText(String(text||"")).width;
+  }
   function esc(s){
     return String(s==null?"":s).replace(/[&<>"']/g, function(c){
       return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
@@ -926,15 +929,32 @@
     }
     function isGroupStartRow(idx){ return isGroupStartCol(idx); }
 
-    // Size columns to fill the available width on wide screens (so nothing
-    // needs horizontal scrolling unless there are genuinely too many perfumes
-    // to fit even at the minimum readable width).
-    var MX_MIN_COL = 64, MX_MAX_COL = 148, MX_ROWHEAD_RESERVE = 190;
-    var availWidth = holder.clientWidth || (window.innerWidth - 260);
-    var colWidth = Math.max(MX_MIN_COL, Math.min(MX_MAX_COL, Math.floor(Math.max(0, availWidth - MX_ROWHEAD_RESERVE) / Math.max(1, list.length))));
+    // Let the matrix fill the remaining vertical space down to the bottom of
+    // the screen, instead of being capped at a fixed vh so it needs internal
+    // scrolling even when there's plenty of room below it.
+    var MX_MIN_HEIGHT = 240, MX_BOTTOM_MARGIN = 24;
+    var holderTop = holder.getBoundingClientRect().top;
+    var wrapMaxHeight = Math.max(MX_MIN_HEIGHT, Math.floor(window.innerHeight - holderTop - MX_BOTTOM_MARGIN));
+
+    // Column width: wide enough that the longest single word in any visible
+    // perfume name never has to break mid-word onto a second line (important
+    // on phones, where the old fixed 108px column split names like
+    // "Concordia" into "Concordi" / "a"). Falls back to a compact default
+    // when names are short, and horizontal scrolling (already supported)
+    // still kicks in if there simply isn't room for every column.
+    var MX_MIN_COL = 72, MX_MAX_COL = 220, MX_COL_PAD = 26;
+    var longestWord = 0;
+    list.forEach(function(p){
+      String(p.name || "").split(/\s+/).forEach(function(word){
+        if (!word) return;
+        var w = measureText(word, "600 11.5px 'Inter',system-ui,-apple-system,'Segoe UI',sans-serif");
+        if (w > longestWord) longestWord = w;
+      });
+    });
+    var colWidth = Math.max(MX_MIN_COL, Math.min(MX_MAX_COL, Math.ceil(longestWord + MX_COL_PAD)));
     var colWidthStyle = "width:"+colWidth+"px;min-width:"+colWidth+"px;max-width:"+colWidth+"px;";
 
-    var html = '<div class="matrix-wrap"><table class="matrix"><thead><tr><th class="mx-corner"></th>';
+    var html = '<div class="matrix-wrap" style="max-height:'+wrapMaxHeight+'px;"><table class="matrix"><thead><tr><th class="mx-corner"></th>';
     list.forEach(function(p, idx){
       var cls = "mx-colhead" + (isGroupStartCol(idx) ? " mx-group-start-col" : "");
       html += '<th class="'+cls+'" style="'+colWidthStyle+groupStyle(p,"border-bottom-color")+(grouped?"border-bottom-width:3px;border-bottom-style:solid;":"")+'"><div class="mx-head-inner">'+esc(p.name)+'</div></th>';
