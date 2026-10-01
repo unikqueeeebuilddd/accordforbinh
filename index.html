@@ -143,17 +143,20 @@
   .filter-count-badge{display:none; min-width:16px; height:16px; padding:0 4px; border-radius:100px; background:var(--accent); color:var(--accent-ink); font-size:10px; font-weight:700; align-items:center; justify-content:center;}
   .filter-count-badge.on{display:inline-flex;}
   .filter-dropdown{
-    display:none; position:absolute; top:calc(100% + 8px); right:0; z-index:30; width:min(320px, calc(100vw - 32px));
+    display:none; position:absolute; top:calc(100% + 8px); right:0; z-index:30; width:min(300px, calc(100vw - 32px));
     max-height:min(70vh, 480px); overflow-y:auto;
-    flex-direction:column; gap:12px; background:var(--surface); border:1px solid var(--border-strong); border-radius:12px;
-    padding:16px; box-shadow:var(--shadow);
+    flex-direction:column; gap:10px; background:var(--surface); border:1px solid var(--border-strong); border-radius:12px;
+    padding:13px 14px; box-shadow:var(--shadow);
   }
   .filter-dropdown.open{display:flex;}
-  .filter-dropdown-section + .filter-dropdown-section{border-top:1px solid var(--border); padding-top:12px;}
-  .filter-dropdown-label{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-mute); font-weight:600; margin-bottom:7px;}
+  .filter-dropdown-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px 12px;}
+  .filter-dropdown-grid + .filter-dropdown-grid{border-top:1px solid var(--border); padding-top:10px;}
+  .filter-dropdown-section{min-width:0;}
+  .filter-dropdown-label{font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-mute); font-weight:600; margin-bottom:5px;}
+  .chip-select{gap:5px;}
   .chip-toggle{
-    padding:7px 12px; border-radius:100px; border:1px solid var(--border-strong); background:var(--surface);
-    color:var(--ink-2); font-size:12.5px; font-weight:600; cursor:pointer;
+    padding:5px 9px; border-radius:100px; border:1px solid var(--border-strong); background:var(--surface);
+    color:var(--ink-2); font-size:11.5px; font-weight:600; cursor:pointer; line-height:1.3;
   }
   .chip-toggle.on{background:var(--accent); border-color:var(--accent); color:var(--accent-ink);}
 
@@ -381,21 +384,27 @@
             Filters<span class="filter-count-badge" id="layering-filter-count"></span>
           </button>
           <div class="filter-dropdown" id="layering-filter-drawer">
-            <div class="filter-dropdown-section">
-              <div class="filter-dropdown-label">Season</div>
-              <div class="chip-select" id="layering-season-filter"></div>
+            <div class="filter-dropdown-grid">
+              <div class="filter-dropdown-section">
+                <div class="filter-dropdown-label">Season</div>
+                <div class="chip-select" id="layering-season-filter"></div>
+              </div>
+              <div class="filter-dropdown-section">
+                <div class="filter-dropdown-label">Time of day</div>
+                <div class="chip-select" id="layering-daypart-filter"></div>
+              </div>
             </div>
-            <div class="filter-dropdown-section">
-              <div class="filter-dropdown-label">Time of day</div>
-              <div class="chip-select" id="layering-daypart-filter"></div>
+            <div class="filter-dropdown-grid" id="layering-family-filter-bar" style="display:none;">
+              <div class="filter-dropdown-section">
+                <div class="filter-dropdown-label">Family</div>
+                <div class="chip-select" id="layering-family-filter"></div>
+              </div>
             </div>
-            <div class="filter-dropdown-section" id="layering-family-filter-bar" style="display:none;">
-              <div class="filter-dropdown-label">Family</div>
-              <div class="chip-select" id="layering-family-filter"></div>
-            </div>
-            <div class="filter-dropdown-section">
-              <div class="filter-dropdown-label">Rating</div>
-              <div class="chip-select" id="layering-rating-filter"></div>
+            <div class="filter-dropdown-grid">
+              <div class="filter-dropdown-section" style="grid-column:1 / -1;">
+                <div class="filter-dropdown-label">Rating</div>
+                <div class="chip-select" id="layering-rating-filter"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -828,7 +837,10 @@
   }
 
   function filteredMatrixPerfumes(){
-    var q = (state.layeringSearch||"").trim().toLowerCase();
+    // Season/daypart/family filters only. Search is handled separately in
+    // renderMatrix (see matrixSearchMatch below) so it can narrow just the
+    // column axis of the matrix instead of shrinking both axes down to only
+    // perfumes that mutually match the query.
     return state.perfumes.filter(function(p){
       if (state.layeringSeasonFilter && (p.seasons||[]).indexOf(state.layeringSeasonFilter) === -1) return false;
       if (state.layeringDaypartFilter && (p.daypart||[]).indexOf(state.layeringDaypartFilter) === -1) return false;
@@ -837,13 +849,14 @@
         if (state.layeringFamilyFilter === "__unsorted__"){ if (fam) return false; }
         else if (!fam || fam.id !== state.layeringFamilyFilter) return false;
       }
-      if (q){
-        var fam2 = resolveFamily(p);
-        var hay = [p.name,p.brand,(fam2?fam2.name:p.family)].join(" ").toLowerCase();
-        if (hay.indexOf(q) === -1) return false;
-      }
       return true;
     });
+  }
+
+  function matrixSearchMatch(p, q){
+    var fam2 = resolveFamily(p);
+    var hay = [p.name, p.brand, (fam2 ? fam2.name : p.family)].join(" ").toLowerCase();
+    return hay.indexOf(q) !== -1;
   }
 
   function renderLayeringFilters(){
@@ -910,24 +923,42 @@
     }
     var base = filteredMatrixPerfumes();
     if (base.length < 2){
-      holder.innerHTML = '<div class="matrix-empty"><h3 style="font-family:\'Fraunces\',serif; margin:0 0 6px;">No perfumes match these filters</h3><p style="margin:0;">Try clearing the search, season, or family filter above.</p></div>';
+      holder.innerHTML = '<div class="matrix-empty"><h3 style="font-family:\'Fraunces\',serif; margin:0 0 6px;">No perfumes match these filters</h3><p style="margin:0;">Try clearing the season, time of day, or family filter above.</p></div>';
       return;
     }
-    var g = groupedPerfumeList(base);
-    var list = g.flat;
-    var grouped = g.grouped;
-    var groupOfId = g.groupOfId;
 
-    function groupStyle(p, prop){
+    // The search box narrows only the COLUMN axis to the matching perfume(s);
+    // every row stays the full (season/daypart/family-filtered) list — so
+    // searching e.g. "ingenious ginger" shows one narrow column against every
+    // other perfume in the collection, instead of shrinking both axes down to
+    // a tiny square of only mutual matches.
+    var q = (state.layeringSearch||"").trim().toLowerCase();
+    var rowBase = base;
+    var colBase = q ? base.filter(function(p){ return matrixSearchMatch(p, q); }) : base;
+    if (q && colBase.length === 0){
+      holder.innerHTML = '<div class="matrix-empty"><h3 style="font-family:\'Fraunces\',serif; margin:0 0 6px;">No perfume matches that search</h3><p style="margin:0;">Try a different name, brand, or family.</p></div>';
+      return;
+    }
+
+    var gRow = groupedPerfumeList(rowBase);
+    var rowList = gRow.flat;
+    var groupedRow = gRow.grouped;
+    var groupOfIdRow = gRow.groupOfId;
+
+    var gCol = groupedPerfumeList(colBase);
+    var colList = gCol.flat;
+    var groupedCol = gCol.grouped;
+    var groupOfIdCol = gCol.groupOfId;
+
+    function groupStyle(grouped, groupOfId, p, prop){
       if (!grouped) return "";
       var grp = groupOfId[p.id];
       return grp ? (prop+":"+grp.color+";") : "";
     }
-    function isGroupStartCol(idx){
+    function isGroupStart(list, grouped, groupOfId, idx){
       if (!grouped || idx === 0) return false;
       return groupOfId[list[idx].id] !== groupOfId[list[idx-1].id];
     }
-    function isGroupStartRow(idx){ return isGroupStartCol(idx); }
 
     // Let the matrix fill the remaining vertical space down to the bottom of
     // the screen, instead of being capped at a fixed vh so it needs internal
@@ -944,7 +975,7 @@
     // still kicks in if there simply isn't room for every column.
     var MX_MIN_COL = 72, MX_MAX_COL = 220, MX_COL_PAD = 26;
     var longestWord = 0;
-    list.forEach(function(p){
+    colList.forEach(function(p){
       String(p.name || "").split(/\s+/).forEach(function(word){
         if (!word) return;
         var w = measureText(word, "600 11.5px 'Inter',system-ui,-apple-system,'Segoe UI',sans-serif");
@@ -955,18 +986,18 @@
     var colWidthStyle = "width:"+colWidth+"px;min-width:"+colWidth+"px;max-width:"+colWidth+"px;";
 
     var html = '<div class="matrix-wrap" style="max-height:'+wrapMaxHeight+'px;"><table class="matrix"><thead><tr><th class="mx-corner"></th>';
-    list.forEach(function(p, idx){
-      var cls = "mx-colhead" + (isGroupStartCol(idx) ? " mx-group-start-col" : "");
-      html += '<th class="'+cls+'" style="'+colWidthStyle+groupStyle(p,"border-bottom-color")+(grouped?"border-bottom-width:3px;border-bottom-style:solid;":"")+'"><div class="mx-head-inner">'+esc(p.name)+'</div></th>';
+    colList.forEach(function(p, idx){
+      var cls = "mx-colhead" + (isGroupStart(colList, groupedCol, groupOfIdCol, idx) ? " mx-group-start-col" : "");
+      html += '<th class="'+cls+'" style="'+colWidthStyle+groupStyle(groupedCol, groupOfIdCol, p, "border-bottom-color")+(groupedCol?"border-bottom-width:3px;border-bottom-style:solid;":"")+'"><div class="mx-head-inner">'+esc(p.name)+'</div></th>';
     });
     html += '</tr></thead><tbody>';
-    list.forEach(function(rowP, ridx){
-      var trCls = isGroupStartRow(ridx) ? ' class="mx-group-start"' : '';
-      var grp = groupOfId[rowP.id];
-      var showTag = grouped && grp && (ridx === 0 || groupOfId[list[ridx-1].id] !== grp);
+    rowList.forEach(function(rowP, ridx){
+      var trCls = isGroupStart(rowList, groupedRow, groupOfIdRow, ridx) ? ' class="mx-group-start"' : '';
+      var grp = groupOfIdRow[rowP.id];
+      var showTag = groupedRow && grp && (ridx === 0 || groupOfIdRow[rowList[ridx-1].id] !== grp);
       var tagHtml = showTag ? '<div class="mx-group-tag" style="color:'+grp.color+';">'+esc(grp.name)+'</div>' : '';
-      html += '<tr'+trCls+'><th class="mx-rowhead" style="'+groupStyle(rowP,"border-left-color")+(grouped?"border-left-width:4px;border-left-style:solid;":"")+'"><div class="mx-rowhead-inner">'+tagHtml+'<span>'+esc(rowP.name)+'</span></div></th>';
-      list.forEach(function(colP, cidx){
+      html += '<tr'+trCls+'><th class="mx-rowhead" style="'+groupStyle(groupedRow, groupOfIdRow, rowP, "border-left-color")+(groupedRow?"border-left-width:4px;border-left-style:solid;":"")+'"><div class="mx-rowhead-inner">'+tagHtml+'<span>'+esc(rowP.name)+'</span></div></th>';
+      colList.forEach(function(colP, cidx){
         if (rowP.id === colP.id){
           html += '<td><div class="mx-cell-btn mx-cell-diag"></div></td>';
         } else {
@@ -974,7 +1005,7 @@
           var pair = state.pairs[key];
           var rating = pair && pair.rating;
           var bg = rating ? RATING_META[rating].color : null;
-          var tdCls = isGroupStartCol(cidx) ? ' class="mx-group-start-col"' : '';
+          var tdCls = isGroupStart(colList, groupedCol, groupOfIdCol, cidx) ? ' class="mx-group-start-col"' : '';
           var seasonEmoji = (pair && pair.seasons && pair.seasons.length)
             ? pair.seasons.map(function(sid){ var m = seasonMeta(sid); return m ? m.emoji : ""; }).join("")
             : "";
